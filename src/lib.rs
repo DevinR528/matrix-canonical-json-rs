@@ -394,7 +394,16 @@ fn check_canonical_sorts_keys() {
 }
 
 #[test]
-fn check_canon_utf8() {
+fn check_canon_utf8_keys() {
+    let json = serde_json::json!({
+        "本": 2,
+        "日": 1
+    });
+    assert_eq!(to_canonical_string(&json).unwrap(), r#"{"日":1,"本":2}"#)
+}
+
+#[test]
+fn check_canon_utf8_value() {
     let json = serde_json::json!({ "a": "日本語" });
     assert_eq!(to_canonical_string(&json).unwrap(), r#"{"a":"日本語"}"#)
 }
