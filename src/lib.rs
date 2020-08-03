@@ -1,7 +1,16 @@
-use std::io;
+use std::{fmt, io};
 
-use serde::{ser::Error, Serialize};
-use serde_json::ser::{CharEscape, Formatter, Serializer};
+use serde::{
+    ser::{self, Error},
+    serde_if_integer128, Serialize,
+};
+use serde_json::ser::Formatter;
+
+mod map_key;
+mod serializer;
+
+pub use map_key::MapKeySerializer;
+pub use serializer::{Compound, Serializer};
 
 pub type Result<T> = std::result::Result<T, serde_json::Error>;
 
@@ -11,7 +20,7 @@ where
     W: io::Write,
     T: ?Sized + Serialize,
 {
-    let mut ser = Serializer::with_formatter(writer, CanonicalJson);
+    let mut ser = CanonicalJson::new(writer);
     value.serialize(&mut ser)?;
     Ok(())
 }
@@ -43,303 +52,361 @@ where
     )
 }
 
-pub struct CanonicalJson;
+pub struct CanonicalJson<W> {
+    ser: Serializer<W>,
+}
 
-impl Formatter for CanonicalJson {
-    /// Writes a `null` value to the specified writer.
-    #[inline]
-    fn write_null<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(b"null")
-    }
-
-    /// Writes a `true` or `false` value to the specified writer.
-    #[inline]
-    fn write_bool<W>(&mut self, writer: &mut W, value: bool) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let s = if value {
-            b"true" as &[u8]
-        } else {
-            b"false" as &[u8]
-        };
-        writer.write_all(s)
-    }
-
-    /// Writes an integer value like `-123` to the specified writer.
-    #[inline]
-    fn write_i8<W>(&mut self, writer: &mut W, value: i8) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = itoa::Buffer::new();
-        let s = buffer.format(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes an integer value like `-123` to the specified writer.
-    #[inline]
-    fn write_i16<W>(&mut self, writer: &mut W, value: i16) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = itoa::Buffer::new();
-        let s = buffer.format(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes an integer value like `-123` to the specified writer.
-    #[inline]
-    fn write_i32<W>(&mut self, writer: &mut W, value: i32) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = itoa::Buffer::new();
-        let s = buffer.format(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes an integer value like `-123` to the specified writer.
-    #[inline]
-    fn write_i64<W>(&mut self, writer: &mut W, value: i64) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = itoa::Buffer::new();
-        let s = buffer.format(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes an integer value like `123` to the specified writer.
-    #[inline]
-    fn write_u8<W>(&mut self, writer: &mut W, value: u8) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = itoa::Buffer::new();
-        let s = buffer.format(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes an integer value like `123` to the specified writer.
-    #[inline]
-    fn write_u16<W>(&mut self, writer: &mut W, value: u16) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = itoa::Buffer::new();
-        let s = buffer.format(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes an integer value like `123` to the specified writer.
-    #[inline]
-    fn write_u32<W>(&mut self, writer: &mut W, value: u32) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = itoa::Buffer::new();
-        let s = buffer.format(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes an integer value like `123` to the specified writer.
-    #[inline]
-    fn write_u64<W>(&mut self, writer: &mut W, value: u64) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = itoa::Buffer::new();
-        let s = buffer.format(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes a floating point value like `-31.26e+12` to the specified writer.
-    #[inline]
-    fn write_f32<W>(&mut self, writer: &mut W, value: f32) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = ryu::Buffer::new();
-        let s = buffer.format_finite(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes a floating point value like `-31.26e+12` to the specified writer.
-    #[inline]
-    fn write_f64<W>(&mut self, writer: &mut W, value: f64) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        let mut buffer = ryu::Buffer::new();
-        let s = buffer.format_finite(value);
-        writer.write_all(s.as_bytes())
-    }
-
-    /// Writes a number that has already been rendered to a string.
-    #[inline]
-    fn write_number_str<W>(&mut self, writer: &mut W, value: &str) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(value.as_bytes())
-    }
-
-    /// Called before each series of `write_string_fragment` and
-    /// `write_char_escape`.  Writes a `"` to the specified writer.
-    #[inline]
-    fn begin_string<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(b"\"")
-    }
-
-    /// Called after each series of `write_string_fragment` and
-    /// `write_char_escape`.  Writes a `"` to the specified writer.
-    #[inline]
-    fn end_string<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(b"\"")
-    }
-
-    /// Writes a string fragment that doesn't need any escaping to the
-    /// specified writer.
-    #[inline]
-    fn write_string_fragment<W>(&mut self, writer: &mut W, fragment: &str) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(fragment.as_bytes())
-    }
-
-    /// Writes a character escape code to the specified writer.
-    #[inline]
-    fn write_char_escape<W>(&mut self, writer: &mut W, char_escape: CharEscape) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        use self::CharEscape::*;
-
-        let s = match char_escape {
-            Quote => b"\\\"",
-            ReverseSolidus => b"\\\\",
-            Solidus => b"\\/",
-            Backspace => b"\\b",
-            FormFeed => b"\\f",
-            LineFeed => b"\\n",
-            CarriageReturn => b"\\r",
-            Tab => b"\\t",
-            AsciiControl(byte) => {
-                static HEX_DIGITS: [u8; 16] = *b"0123456789abcdef";
-                let bytes = &[
-                    b'\\',
-                    b'u',
-                    b'0',
-                    b'0',
-                    HEX_DIGITS[(byte >> 4) as usize],
-                    HEX_DIGITS[(byte & 0xF) as usize],
-                ];
-                return writer.write_all(bytes);
-            }
-        };
-
-        writer.write_all(s)
-    }
-
-    /// Called before every array.  Writes a `[` to the specified
-    /// writer.
-    #[inline]
-    fn begin_array<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(b"[")
-    }
-
-    /// Called after every array.  Writes a `]` to the specified
-    /// writer.
-    #[inline]
-    fn end_array<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(b"]")
-    }
-
-    /// Called before every array value.  Writes a `,` if needed to
-    /// the specified writer.
-    #[inline]
-    fn begin_array_value<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        if first {
-            Ok(())
-        } else {
-            writer.write_all(b",")
+impl<W: io::Write> CanonicalJson<W> {
+    pub fn new(writer: W) -> Self {
+        Self {
+            ser: Serializer::new(writer),
         }
-    }
-
-    /// Called before every object.  Writes a `{` to the specified
-    /// writer.
-    #[inline]
-    fn begin_object<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(b"{")
-    }
-
-    /// Called after every object.  Writes a `}` to the specified
-    /// writer.
-    #[inline]
-    fn end_object<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(b"}")
-    }
-
-    /// Called before every object key.
-    #[inline]
-    fn begin_object_key<W>(&mut self, writer: &mut W, first: bool) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        if first {
-            Ok(())
-        } else {
-            writer.write_all(b",")
-        }
-    }
-
-    /// Called before every object value.  A `:` should be written to
-    /// the specified writer by either this method or
-    /// `end_object_key`.
-    #[inline]
-    fn begin_object_value<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(b":")
-    }
-
-    /// Writes a raw JSON fragment that doesn't need any escaping to the
-    /// specified writer.
-    #[inline]
-    fn write_raw_fragment<W>(&mut self, writer: &mut W, fragment: &str) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        writer.write_all(fragment.as_bytes())
     }
 }
+
+impl<'a, W> ser::Serializer for &'a mut CanonicalJson<W>
+where
+    W: io::Write,
+{
+    type Ok = ();
+    type Error = serde_json::Error;
+
+    type SerializeSeq = Compound<'a, W>;
+    type SerializeTuple = Compound<'a, W>;
+    type SerializeTupleStruct = Compound<'a, W>;
+    type SerializeTupleVariant = Compound<'a, W>;
+    type SerializeMap = MapKeySorted<'a, W>;
+    type SerializeStruct = MapKeySorted<'a, W>;
+    type SerializeStructVariant = Compound<'a, W>;
+
+    #[inline]
+    fn serialize_bool(self, value: bool) -> Result<()> {
+        self.ser.serialize_bool(value)
+    }
+
+    #[inline]
+    fn serialize_i8(self, value: i8) -> Result<()> {
+        self.ser.serialize_i8(value)
+    }
+
+    #[inline]
+    fn serialize_i16(self, value: i16) -> Result<()> {
+        self.ser.serialize_i16(value)
+    }
+
+    #[inline]
+    fn serialize_i32(self, value: i32) -> Result<()> {
+        self.ser.serialize_i32(value)
+    }
+
+    #[inline]
+    fn serialize_i64(self, value: i64) -> Result<()> {
+        self.ser.serialize_i64(value)
+    }
+
+    serde_if_integer128! {
+        fn serialize_i128(self, value: i128) -> Result<()> {
+            self.ser.serialize_i128(value)
+        }
+
+    }
+
+    #[inline]
+    fn serialize_u8(self, value: u8) -> Result<()> {
+        self.ser.serialize_u8(value)
+    }
+
+    #[inline]
+    fn serialize_u16(self, value: u16) -> Result<()> {
+        self.ser.serialize_u16(value)
+    }
+
+    #[inline]
+    fn serialize_u32(self, value: u32) -> Result<()> {
+        self.ser.serialize_u32(value)
+    }
+
+    #[inline]
+    fn serialize_u64(self, value: u64) -> Result<()> {
+        self.ser.serialize_u64(value)
+    }
+
+    serde_if_integer128! {
+        fn serialize_u128(self, value: u128) -> Result<()> {
+            self.ser.serialize_u128(value)
+        }
+    }
+
+    #[inline]
+    fn serialize_f32(self, value: f32) -> Result<()> {
+        match value.classify() {
+            // `serialize_unit` writes "null" to the writer
+            std::num::FpCategory::Nan | std::num::FpCategory::Infinite => self.serialize_unit(),
+            _ => self.ser.serialize_f32(value),
+        }
+    }
+
+    #[inline]
+    fn serialize_f64(self, value: f64) -> Result<()> {
+        match value.classify() {
+            // `serialize_unit` writes "null" to the writer
+            std::num::FpCategory::Nan | std::num::FpCategory::Infinite => self.serialize_unit(),
+            _ => self.ser.serialize_f64(value),
+        }
+    }
+
+    #[inline]
+    fn serialize_char(self, value: char) -> Result<()> {
+        // A char encoded as UTF-8 takes 4 bytes at most.
+        let mut buf = [0; 4];
+        self.serialize_str(value.encode_utf8(&mut buf))
+    }
+
+    #[inline]
+    fn serialize_str(self, value: &str) -> Result<()> {
+        self.ser.serialize_str(value)
+    }
+
+    #[inline]
+    fn serialize_bytes(self, value: &[u8]) -> Result<()> {
+        use serde::ser::SerializeSeq;
+        let mut seq = self.serialize_seq(Some(value.len()))?;
+        for byte in value {
+            seq.serialize_element(byte)?;
+        }
+        seq.end()
+    }
+
+    #[inline]
+    fn serialize_unit(self) -> Result<()> {
+        self.ser.serialize_unit()
+    }
+
+    #[inline]
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
+        self.serialize_unit()
+    }
+
+    #[inline]
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+    ) -> Result<()> {
+        self.serialize_str(variant)
+    }
+
+    /// Serialize newtypes without an object wrapper.
+    #[inline]
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        value.serialize(self)
+    }
+
+    #[inline]
+    fn serialize_newtype_variant<T>(
+        self,
+        name: &'static str,
+        variant_index: u32,
+        variant: &'static str,
+        value: &T,
+    ) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        self.ser
+            .serialize_newtype_variant(name, variant_index, variant, value)
+    }
+
+    #[inline]
+    fn serialize_none(self) -> Result<()> {
+        self.serialize_unit()
+    }
+
+    #[inline]
+    fn serialize_some<T>(self, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        value.serialize(self)
+    }
+
+    #[inline]
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        self.ser.serialize_seq(len)
+    }
+
+    #[inline]
+    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
+        self.serialize_seq(Some(len))
+    }
+
+    #[inline]
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
+        self.serialize_seq(Some(len))
+    }
+
+    #[inline]
+    fn serialize_tuple_variant(
+        self,
+        name: &'static str,
+        variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
+        self.ser
+            .serialize_tuple_variant(name, variant_index, variant, len)
+    }
+
+    #[inline]
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
+        Ok(MapKeySorted {
+            ser: self,
+            pairs: vec![],
+        })
+    }
+
+    #[inline]
+    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
+        self.serialize_map(Some(len))
+    }
+
+    #[inline]
+    fn serialize_struct_variant(
+        self,
+        name: &'static str,
+        variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeStructVariant> {
+        self.ser
+            .serialize_struct_variant(name, variant_index, variant, len)
+    }
+
+    fn collect_str<T>(self, value: &T) -> Result<()>
+    where
+        T: ?Sized + fmt::Display,
+    {
+        self.ser.collect_str(value)
+    }
+}
+
+pub enum State {
+    Empty,
+    First,
+    Rest,
+}
+
+pub struct MapKeySorted<'a, W> {
+    ser: &'a mut CanonicalJson<W>,
+    pairs: Vec<String>,
+}
+
+impl<'a, W> ser::SerializeMap for MapKeySorted<'a, W>
+where
+    W: io::Write,
+{
+    type Ok = ();
+    type Error = serde_json::Error;
+
+    fn serialize_entry<K: ?Sized, V: ?Sized>(&mut self, key: &K, value: &V) -> Result<()>
+    where
+        K: Serialize,
+        V: Serialize,
+    {
+        let mut buf = vec![];
+        let mut ser = Serializer::new(&mut buf);
+
+        key.serialize(MapKeySerializer { ser: &mut ser })?;
+        buf.push(b':');
+        value.serialize(&mut Serializer::new(&mut buf))?;
+
+        let pair = unsafe { String::from_utf8_unchecked(buf) };
+        self.pairs.push(pair);
+
+        Ok(())
+    }
+
+    fn serialize_key<T: ?Sized>(&mut self, _key: &T) -> Result<()>
+    where
+        T: Serialize,
+    {
+        Ok(())
+    }
+
+    fn serialize_value<T: ?Sized>(&mut self, _value: &T) -> Result<()>
+    where
+        T: Serialize,
+    {
+        Ok(())
+    }
+
+    fn end(mut self) -> Result<Self::Ok> {
+        self.pairs.sort();
+        let count = self.pairs.len();
+        self.ser
+            .ser
+            .writer
+            .write_all(&[b'{'])
+            .map_err(Error::custom)?;
+        for (idx, pair) in self.pairs.drain(..).enumerate() {
+            self.ser
+                .ser
+                .writer
+                .write_all(pair.as_bytes())
+                .map_err(Error::custom)?;
+
+            if count != idx + 1 {
+                self.ser
+                    .ser
+                    .writer
+                    .write_all(&[b','])
+                    .map_err(Error::custom)?;
+            }
+        }
+        self.ser
+            .ser
+            .writer
+            .write_all(&[b'}'])
+            .map_err(Error::custom)?;
+
+        self.pairs.clear();
+
+        Ok(())
+    }
+}
+
+impl<'a, W> ser::SerializeStruct for MapKeySorted<'a, W>
+where
+    W: io::Write,
+{
+    type Ok = ();
+    type Error = serde_json::Error;
+
+    #[inline]
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        ser::SerializeMap::serialize_entry(self, key, value)
+    }
+
+    #[inline]
+    fn end(self) -> Result<()> {
+        ser::SerializeMap::end(self)
+    }
+}
+
+pub struct CanonicalJsonFmt;
+
+impl Formatter for CanonicalJsonFmt {}
 
 #[test]
 fn check_canon_empty() {
@@ -418,4 +485,18 @@ fn check_canon_utf8_display() {
 fn check_canon_null() {
     let json = serde_json::json!({ "a": null });
     assert_eq!(to_canonical_string(&json).unwrap(), r#"{"a":null}"#)
+}
+
+#[test]
+fn sorts_keys_of_structs() {
+    #[derive(Debug, serde_derive::Serialize)]
+    struct Test {
+        z: u8,
+        y: u64,
+        x: usize,
+    }
+
+    let t = Test { x: 1, y: 23, z: 10 };
+
+    assert_eq!(to_canonical_string(&t).unwrap(), r#"{"x":1,"y":23,"z":10}"#)
 }
