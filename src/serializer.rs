@@ -165,41 +165,13 @@ where
     }
 
     #[inline]
-    fn serialize_f32(self, value: f32) -> Result<()> {
-        match value.classify() {
-            std::num::FpCategory::Nan | std::num::FpCategory::Infinite => {
-                tri!(self
-                    .formatter
-                    .write_null(&mut self.writer)
-                    .map_err(Error::io));
-            }
-            _ => {
-                tri!(self
-                    .formatter
-                    .write_f32(&mut self.writer, value)
-                    .map_err(Error::io));
-            }
-        }
-        Ok(())
+    fn serialize_f32(self, _value: f32) -> Result<()> {
+        Err(Error::custom("floats are not allowed"))
     }
 
     #[inline]
-    fn serialize_f64(self, value: f64) -> Result<()> {
-        match value.classify() {
-            std::num::FpCategory::Nan | std::num::FpCategory::Infinite => {
-                tri!(self
-                    .formatter
-                    .write_null(&mut self.writer)
-                    .map_err(Error::io));
-            }
-            _ => {
-                tri!(self
-                    .formatter
-                    .write_f64(&mut self.writer, value)
-                    .map_err(Error::io));
-            }
-        }
-        Ok(())
+    fn serialize_f64(self, _value: f64) -> Result<()> {
+        Err(Error::custom("floats are not allowed"))
     }
 
     #[inline]

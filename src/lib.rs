@@ -138,21 +138,13 @@ where
     }
 
     #[inline]
-    fn serialize_f32(self, value: f32) -> Result<()> {
-        match value.classify() {
-            // `serialize_unit` writes "null" to the writer
-            std::num::FpCategory::Nan | std::num::FpCategory::Infinite => self.serialize_unit(),
-            _ => self.ser.serialize_f32(value),
-        }
+    fn serialize_f32(self, _value: f32) -> Result<()> {
+        Err(Error::custom("floats are not allowed"))
     }
 
     #[inline]
-    fn serialize_f64(self, value: f64) -> Result<()> {
-        match value.classify() {
-            // `serialize_unit` writes "null" to the writer
-            std::num::FpCategory::Nan | std::num::FpCategory::Infinite => self.serialize_unit(),
-            _ => self.ser.serialize_f64(value),
-        }
+    fn serialize_f64(self, _value: f64) -> Result<()> {
+        Err(Error::custom("floats are not allowed"))
     }
 
     #[inline]
@@ -409,13 +401,13 @@ pub struct CanonicalJsonFmt;
 impl Formatter for CanonicalJsonFmt {}
 
 #[test]
-fn check_canon_empty() {
+fn check_canonical_empty() {
     let json = serde_json::json!({});
     assert_eq!(to_canonical_string(&json).unwrap(), r#"{}"#)
 }
 
 #[test]
-fn check_canon_num() {
+fn check_canonical_num() {
     let json = serde_json::json!({
         "b": "2",
         "a": "1"
@@ -424,7 +416,7 @@ fn check_canon_num() {
 }
 
 #[test]
-fn check_canon_obj() {
+fn check_canonical_obj() {
     let json = serde_json::json!({ "one": 1, "two": "Two" });
     assert_eq!(
         to_canonical_string(&json).unwrap(),
@@ -461,7 +453,7 @@ fn check_canonical_sorts_keys() {
 }
 
 #[test]
-fn check_canon_utf8_keys() {
+fn check_canonical_utf8_keys() {
     let json = serde_json::json!({
         "本": 2,
         "日": 1
@@ -470,21 +462,27 @@ fn check_canon_utf8_keys() {
 }
 
 #[test]
-fn check_canon_utf8_value() {
+fn check_canonical_utf8_value() {
     let json = serde_json::json!({ "a": "日本語" });
     assert_eq!(to_canonical_string(&json).unwrap(), r#"{"a":"日本語"}"#)
 }
 
 #[test]
-fn check_canon_utf8_display() {
+fn check_canonical_utf8_display() {
     let json = serde_json::json!({ "a": "\u{65E5}" });
     assert_eq!(to_canonical_string(&json).unwrap(), r#"{"a":"日"}"#)
 }
 
 #[test]
-fn check_canon_null() {
+fn check_canonical_null() {
     let json = serde_json::json!({ "a": null });
     assert_eq!(to_canonical_string(&json).unwrap(), r#"{"a":null}"#)
+}
+
+#[test]
+fn check_canonical_float_value() {
+    let json = serde_json::json!({ "a": 1.01_f32 });
+    assert!(to_canonical_string(&json).is_err())
 }
 
 #[test]
