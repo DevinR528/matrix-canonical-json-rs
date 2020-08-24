@@ -1,18 +1,21 @@
 use std::{fmt, io};
 
 use serde::{
-    ser::{self, Error},
+    ser::{self, Error as _},
     serde_if_integer128, Serialize,
 };
-use serde_json::ser::Formatter;
 
+mod error;
+mod formatter;
 mod map_key;
 mod serializer;
 
+pub use error::Error;
+pub use formatter::Formatter;
 pub use map_key::MapKeySerializer;
 pub use serializer::{Compound, Serializer};
 
-pub type Result<T> = std::result::Result<T, serde_json::Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[inline]
 fn to_canonical_writer<W, T>(writer: W, value: &T) -> Result<()>
@@ -33,7 +36,7 @@ where
     let mut writer = Vec::with_capacity(128);
     to_canonical_writer(&mut writer, value)?;
     if writer.len() > 65_535 {
-        return Err(serde_json::Error::custom(
+        return Err(Error::custom(
             "canonical JSON larger than 65,535 bytes is not allowed",
         ));
     }
@@ -69,7 +72,7 @@ where
     W: io::Write,
 {
     type Ok = ();
-    type Error = serde_json::Error;
+    type Error = Error;
 
     type SerializeSeq = Compound<'a, W>;
     type SerializeTuple = Compound<'a, W>;
@@ -306,7 +309,7 @@ where
     W: io::Write,
 {
     type Ok = ();
-    type Error = serde_json::Error;
+    type Error = Error;
 
     fn serialize_entry<K: ?Sized, V: ?Sized>(&mut self, key: &K, value: &V) -> Result<()>
     where
@@ -380,7 +383,7 @@ where
     W: io::Write,
 {
     type Ok = ();
-    type Error = serde_json::Error;
+    type Error = Error;
 
     #[inline]
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
@@ -487,6 +490,20 @@ fn check_canonical_float_value() {
 
 #[test]
 fn sorts_keys_of_structs() {
+    #[derive(Debug, serde_derive::Serialize)]
+    struct Test {
+        z: u8,
+        y: u64,
+        x: usize,
+    }
+
+    let t = Test { x: 1, y: 23, z: 10 };
+
+    assert_eq!(to_canonical_string(&t).unwrap(), r#"{"x":1,"y":23,"z":10}"#)
+}
+
+#[test]
+fn test_errors() {
     #[derive(Debug, serde_derive::Serialize)]
     struct Test {
         z: u8,

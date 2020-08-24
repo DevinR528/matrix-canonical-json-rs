@@ -4,12 +4,8 @@ use serde::{
     ser::{self, Error as _},
     serde_if_integer128, Serialize,
 };
-use serde_json::{
-    ser::{CharEscape, Formatter, State},
-    Error,
-};
 
-use crate::{CanonicalJsonFmt, Result};
+use crate::{formatter::Formatter, CanonicalJsonFmt, Error, Result};
 
 // We only use our own error type; no need for From conversions provided by the
 // standard library's try! macro. This reduces lines of LLVM IR by 4%.
@@ -791,7 +787,7 @@ fn format_escaped_str<W>(
     writer: &mut W,
     formatter: &mut CanonicalJsonFmt,
     value: &str,
-) -> serde_json::Result<()>
+) -> Result<()>
 where
     W: ?Sized + io::Write,
 {
@@ -805,7 +801,7 @@ fn format_escaped_str_contents<W>(
     writer: &mut W,
     formatter: &mut CanonicalJsonFmt,
     value: &str,
-) -> serde_json::Result<()>
+) -> Result<()>
 where
     W: ?Sized + io::Write,
 {
@@ -825,7 +821,7 @@ where
                 .map_err(Error::custom));
         }
 
-        let char_escape = from_escape_table(escape, byte);
+        let char_escape = CharEscape::from_escape_table(escape, byte);
         tri!(formatter
             .write_char_escape(writer, char_escape)
             .map_err(Error::custom));
@@ -842,18 +838,52 @@ where
     Ok(())
 }
 
-#[inline]
-fn from_escape_table(escape: u8, byte: u8) -> CharEscape {
-    match escape {
-        self::BB => CharEscape::Backspace,
-        self::TT => CharEscape::Tab,
-        self::NN => CharEscape::LineFeed,
-        self::FF => CharEscape::FormFeed,
-        self::RR => CharEscape::CarriageReturn,
-        self::QU => CharEscape::Quote,
-        self::BS => CharEscape::ReverseSolidus,
-        self::UU => CharEscape::AsciiControl(byte),
-        _ => unreachable!(),
+// Not public API. Should be pub(crate).
+#[doc(hidden)]
+#[derive(Eq, PartialEq)]
+pub enum State {
+    Empty,
+    First,
+    Rest,
+}
+
+/// Represents a character escape code in a type-safe manner.
+pub enum CharEscape {
+    /// An escaped quote `"`
+    Quote,
+    /// An escaped reverse solidus `\`
+    ReverseSolidus,
+    /// An escaped solidus `/`
+    Solidus,
+    /// An escaped backspace character (usually escaped as `\b`)
+    Backspace,
+    /// An escaped form feed character (usually escaped as `\f`)
+    FormFeed,
+    /// An escaped line feed character (usually escaped as `\n`)
+    LineFeed,
+    /// An escaped carriage return character (usually escaped as `\r`)
+    CarriageReturn,
+    /// An escaped tab character (usually escaped as `\t`)
+    Tab,
+    /// An escaped ASCII plane control character (usually escaped as
+    /// `\u00XX` where `XX` are two hex characters)
+    AsciiControl(u8),
+}
+
+impl CharEscape {
+    #[inline]
+    fn from_escape_table(escape: u8, byte: u8) -> CharEscape {
+        match escape {
+            self::BB => CharEscape::Backspace,
+            self::TT => CharEscape::Tab,
+            self::NN => CharEscape::LineFeed,
+            self::FF => CharEscape::FormFeed,
+            self::RR => CharEscape::CarriageReturn,
+            self::QU => CharEscape::Quote,
+            self::BS => CharEscape::ReverseSolidus,
+            self::UU => CharEscape::AsciiControl(byte),
+            _ => unreachable!(),
+        }
     }
 }
 

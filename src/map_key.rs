@@ -4,9 +4,8 @@ use serde::{
     ser::{self, Error as _, Impossible},
     serde_if_integer128, Serialize,
 };
-use serde_json::Error;
 
-use crate::{serializer::Serializer, Result};
+use crate::{serializer::Serializer, Error, Result};
 
 pub struct MapKeySerializer<'a, W: 'a> {
     pub ser: &'a mut Serializer<W>,
