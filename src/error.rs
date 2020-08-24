@@ -3,16 +3,18 @@ use std::{error::Error as StdError, fmt, io};
 #[derive(Debug)]
 pub enum Error {
     Custom(String),
-    SerializeError(String),
     IOError(io::Error),
+    InvalidInput(String),
+    SizeLimit,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Custom(msg) => write!(f, "{}", msg),
-            Error::SerializeError(msg) => write!(f, "{}", msg),
             Error::IOError(err) => write!(f, "{}", err),
+            Error::InvalidInput(msg) => write!(f, "Found invalid input: {}", msg),
+            Error::SizeLimit => write!(f, "canonical JSON larger than 65,535 bytes is not allowed"),
         }
     }
 }

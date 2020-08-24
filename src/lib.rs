@@ -1,9 +1,6 @@
 use std::{fmt, io};
 
-use serde::{
-    ser::{self, Error as _},
-    serde_if_integer128, Serialize,
-};
+use serde::{ser, serde_if_integer128, Serialize};
 
 mod error;
 mod formatter;
@@ -36,9 +33,7 @@ where
     let mut writer = Vec::with_capacity(128);
     to_canonical_writer(&mut writer, value)?;
     if writer.len() > 65_535 {
-        return Err(Error::custom(
-            "canonical JSON larger than 65,535 bytes is not allowed",
-        ));
+        return Err(Error::SizeLimit);
     }
     Ok(writer)
 }
@@ -49,8 +44,7 @@ where
 {
     let vec = to_canonical_vec(value)?;
     Ok(
-        // No invalid utf8 is emitted from serde_json
-        // or the CanonicalJson formatter.
+        // serde_json does this so we can too.
         unsafe { String::from_utf8_unchecked(vec) },
     )
 }
@@ -141,13 +135,19 @@ where
     }
 
     #[inline]
-    fn serialize_f32(self, _value: f32) -> Result<()> {
-        Err(Error::custom("floats are not allowed"))
+    fn serialize_f32(self, value: f32) -> Result<()> {
+        Err(Error::InvalidInput(format!(
+            "f32 is not valid in canonical JSON found {}",
+            value
+        )))
     }
 
     #[inline]
-    fn serialize_f64(self, _value: f64) -> Result<()> {
-        Err(Error::custom("floats are not allowed"))
+    fn serialize_f64(self, value: f64) -> Result<()> {
+        Err(Error::InvalidInput(format!(
+            "f64 is not valid in canonical JSON found {}",
+            value
+        )))
     }
 
     #[inline]
@@ -344,33 +344,24 @@ where
     }
 
     fn end(mut self) -> Result<Self::Ok> {
+        // Sort the "pairs", this is a Vec<String> that looks like
+        // `"key": value` so this will always sort correctly
         self.pairs.sort();
         let count = self.pairs.len();
-        self.ser
-            .ser
-            .writer
-            .write_all(&[b'{'])
-            .map_err(Error::custom)?;
+        self.ser.ser.writer.write_all(&[b'{']).map_err(Error::io)?;
         for (idx, pair) in self.pairs.drain(..).enumerate() {
             self.ser
                 .ser
                 .writer
                 .write_all(pair.as_bytes())
-                .map_err(Error::custom)?;
+                .map_err(Error::io)?;
 
+            // not at last item so add a comma
             if count != idx + 1 {
-                self.ser
-                    .ser
-                    .writer
-                    .write_all(&[b','])
-                    .map_err(Error::custom)?;
+                self.ser.ser.writer.write_all(&[b',']).map_err(Error::io)?;
             }
         }
-        self.ser
-            .ser
-            .writer
-            .write_all(&[b'}'])
-            .map_err(Error::custom)?;
+        self.ser.ser.writer.write_all(&[b'}']).map_err(Error::io)?;
 
         self.pairs.clear();
 
@@ -489,6 +480,8 @@ fn check_canonical_float_value() {
 }
 
 #[test]
+// This is the most important test since sorting the keys directly from a struct is
+// the only thing that `serde_json::to_string` couldn't do (and size limits).
 fn sorts_keys_of_structs() {
     #[derive(Debug, serde_derive::Serialize)]
     struct Test {
@@ -503,15 +496,56 @@ fn sorts_keys_of_structs() {
 }
 
 #[test]
-fn test_errors() {
-    #[derive(Debug, serde_derive::Serialize)]
+fn test_float_error() {
+    #[derive(serde_derive::Serialize)]
     struct Test {
-        z: u8,
-        y: u64,
-        x: usize,
+        x: f64,
     }
 
-    let t = Test { x: 1, y: 23, z: 10 };
+    let t = Test { x: 1.01 };
 
-    assert_eq!(to_canonical_string(&t).unwrap(), r#"{"x":1,"y":23,"z":10}"#)
+    assert!(matches!(
+        to_canonical_string(&t),
+        Err(Error::InvalidInput(msg)) if msg == "f64 is not valid in canonical JSON found 1.01"
+    ))
+}
+
+#[test]
+fn test_write_error() {
+    use std::io::{self, Error as IoError, ErrorKind, Write};
+
+    struct FailWriter;
+    impl Write for FailWriter {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(IoError::new(ErrorKind::Other, "failed"))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(serde_derive::Serialize)]
+    struct Test {
+        x: u32,
+    }
+
+    let t = Test { x: 1 };
+
+    assert!(
+        matches!(to_canonical_writer(FailWriter, &t), Err(Error::IOError(msg)) if msg.to_string() == "failed")
+    )
+}
+
+#[test]
+fn test_size_error() {
+    #[derive(serde_derive::Serialize)]
+    struct Test {
+        x: Vec<String>,
+    }
+
+    let t = Test {
+        x: vec!["a".to_string(); 65_535],
+    };
+
+    assert!(matches!(to_canonical_string(&t), Err(Error::SizeLimit)))
 }

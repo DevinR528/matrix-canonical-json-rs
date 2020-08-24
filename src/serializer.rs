@@ -161,13 +161,19 @@ where
     }
 
     #[inline]
-    fn serialize_f32(self, _value: f32) -> Result<()> {
-        Err(Error::custom("floats are not allowed"))
+    fn serialize_f32(self, value: f32) -> Result<()> {
+        Err(Error::InvalidInput(format!(
+            "f32 is not valid in canonical JSON found {}",
+            value
+        )))
     }
 
     #[inline]
-    fn serialize_f64(self, _value: f64) -> Result<()> {
-        Err(Error::custom("floats are not allowed"))
+    fn serialize_f64(self, value: f64) -> Result<()> {
+        Err(Error::InvalidInput(format!(
+            "f64 is not valid in canonical JSON found {}",
+            value
+        )))
     }
 
     #[inline]
